@@ -150,7 +150,20 @@
         const res = await fetch(url, {
           headers: { Authorization: 'Bearer ' + accessToken }
         });
-        const data = await res.json();
+
+        let data = {};
+        if (res.status === 204) {
+          // empty result, let processFn decide what to do
+        } else if (res.ok) {
+          try {
+            data = await res.json();
+          } catch (err) {
+            console.warn(`Could not parse JSON for ${title}`, err);
+          }
+        } else {
+          alert(`Error ${res.status} fetching ${title}`, await res.text());
+        }
+
         const items = processFn(data);
 
         const section = document.createElement('section');
