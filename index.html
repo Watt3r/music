@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Music Lens – Spotify Data</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      line-height: 1.6;
+      max-width: 800px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      background-color: #f9f9f9;
+      color: #333;
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 1.5rem;
+      font-size: 2rem;
+    }
+    section {
+      background: #fff;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    h2 {
+      margin-top: 0;
+      font-size: 1.25rem;
+      color: #1DB954;
+    }
+    ol {
+      padding-left: 1.25rem;
+      margin: 0.5rem 0;
+    }
+    li {
+      margin-bottom: 0.25rem;
+    }
+    footer {
+      text-align: center;
+      margin-top: 2rem;
+      font-size: 0.9rem;
+      color: #666;
+    }
+    footer a {
+      color: #1DB954;
+      text-decoration: none;
+    }
+    footer a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Music Lens – Spotify Data</h1>
+  <div id="content"></div>
+
+  <footer>
+    <p>Enjoy your music!</p>
+    <p>Made by <a href="https://lucas.tools">Lucas.tools</a></p>
+    <a href="https://www.buymeacoffee.com/lucasobe" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
+  </footer>
+
+  <script>
+    const clientId = '38ee6b36c1a64938a7cafe5dbe336c9d'; // this is public don't worry
+    const redirectUri = window.location.origin + window.location.pathname;
+    const scopes = [
+      'user-top-read',
+      'user-read-recently-played',
+      'user-read-currently-playing',
+      'user-read-private',
+      'user-read-email'
+    ].join(' ');
+
+    const authEndpoint = 'https://accounts.spotify.com/authorize';
+    const tokenEndpoint = 'https://accounts.spotify.com/api/token';
+    let accessToken = null;
+
+    async function sha256(plain) {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(plain);
+      const hash = await crypto.subtle.digest('SHA-256', data);
+      return new Uint8Array(hash);
+    }
+
+    function base64UrlEncode(arrayBuffer) {
+      let base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+      return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+
+    function generateRandomString(length) {
+      const array = new Uint8Array(length);
+      crypto.getRandomValues(array);
+      return Array.from(array, dec => ('0' + dec.toString(16)).substr(-2)).join('');
+    }
+
+    async function startAuth() {
+      const codeVerifier = generateRandomString(64);
+      sessionStorage.setItem('code_verifier', codeVerifier);
+
+      const codeChallenge = await sha256(codeVerifier).then(base64UrlEncode);
+
+      const authUrl = `${authEndpoint}?client_id=${clientId}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&code_challenge_method=S256&code_challenge=${codeChallenge}`;
+
+      window.location = authUrl;
+    }
+
+    async function handleCallback() {
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get('code');
+      if (!code) {
+        startAuth();
+        return;
+      }
+
+      const codeVerifier = sessionStorage.getItem('code_verifier');
+
+      const body = new URLSearchParams({
+        client_id: clientId,
+        grant_type: 'authorization_code',
+        code: code,
+        redirect_uri: redirectUri,
+        code_verifier: codeVerifier,
+      });
+
+      const response = await fetch(tokenEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body,
+      });
+
+      const data = await response.json();
+      accessToken = data.access_token;
+      sessionStorage.setItem('access_token', data.access_token);
+      if (data.refresh_token) {
+          sessionStorage.setItem('refresh_token', data.refresh_token);
+      }
+
+      await fetchAllData();
+    }
+
+    async function fetchAllData() {
+      const content = document.getElementById('content');
+
+      async function fetchAndDisplay(title, url, processFn) {
+        const res = await fetch(url, {
+          headers: { Authorization: 'Bearer ' + accessToken }
+        });
+        const data = await res.json();
+        const items = processFn(data);
+
+        const section = document.createElement('section');
+        const heading = document.createElement('h2');
+        heading.textContent = title;
+        section.appendChild(heading);
+
+        const list = document.createElement('ol');
+        for (const item of items) {
+          const li = document.createElement('li');
+          li.textContent = item;
+          list.appendChild(li);
+        }
+        section.appendChild(list);
+        content.appendChild(section);
+      }
+
+      await fetchAndDisplay('Profile', 'https://api.spotify.com/v1/me', (data) => [
+        `Display Name: ${data.display_name}`,
+        `Email: ${data.email}`,
+        `Country: ${data.country}`,
+        `Product: ${data.product}`
+      ]);
+
+      const ranges = ['short_term', 'medium_term', 'long_term'];
+
+      for (const range of ranges) {
+        await fetchAndDisplay(`Top Artists (${range})`, `https://api.spotify.com/v1/me/top/artists?limit=50&time_range=${range}`, (data) =>
+          data.items.map(item => item.name)
+        );
+      }
+
+      for (const range of ranges) {
+        await fetchAndDisplay(`Top Tracks (${range})`, `https://api.spotify.com/v1/me/top/tracks?limit=50&time_range=${range}`, (data) =>
+          data.items.map(item => `${item.name} — ${item.artists.map(a => a.name).join(', ')}`)
+        );
+      }
+
+      await fetchAndDisplay('Currently Playing', 'https://api.spotify.com/v1/me/player/currently-playing', (data) => {
+        if (!data || !data.item) return ['Nothing currently playing'];
+        return [`${data.item.name} — ${data.item.artists.map(a => a.name).join(', ')}`];
+      });
+
+      await fetchAndDisplay('Recently Played Tracks', 'https://api.spotify.com/v1/me/player/recently-played?limit=20', (data) =>
+        data.items.map(item => `${item.track.name} — ${item.track.artists.map(a => a.name).join(', ')}`)
+      );
+    }
+
+    async function init() {
+    const params = new URLSearchParams(window.location.search);
+    const code   = params.get('code');
+    const stored = sessionStorage.getItem('access_token');
+  
+    if (stored) {
+      accessToken = stored;
+      await fetchAllData();
+    }
+    else if (code) {
+      const codeVerifier = sessionStorage.getItem('code_verifier');
+      const body = new URLSearchParams({
+        client_id:     clientId,
+        grant_type:    'authorization_code',
+        code,
+        redirect_uri:  redirectUri,
+        code_verifier: codeVerifier,
+      });
+      const res = await fetch(tokenEndpoint, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body
+      });
+      const data = await res.json();
+  
+      accessToken = data.access_token;
+      sessionStorage.setItem('access_token', data.access_token);
+      if (data.refresh_token) sessionStorage.setItem('refresh_token', data.refresh_token);
+  
+      window.history.replaceState({}, document.title, redirectUri);
+  
+      await fetchAllData();
+    }
+    else {
+      startAuth();
+    }
+  }
+  
+  init();
+  </script>
+</body>
+</html>
