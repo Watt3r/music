@@ -4,9 +4,13 @@
     <meta charset="UTF-8" />
     <title>Music Lens – Spotify Data</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap"
+            rel="stylesheet"
+            />
     <style>
       body {
-        font-family: Arial, sans-serif;
+        font-family: 'Inter', system-ui, sans-serif;
         line-height: 1.6;
         max-width: 800px;
         margin: 2rem auto;
@@ -64,7 +68,16 @@
         <a href="https://favoritemusic.guru">favoritemusic.guru</a>, but its now
         broken :(
       </p>
-      <p>Made by <a href="https://lucas.tools">Lucas.tools</a></p>
+      <div style="margin-top:2rem; text-align:center;">
+          <img src="spotify-logo-black.svg" alt="Spotify Logo" style="height:24px; vertical-align:middle;">
+          <span style="font-size:0.9rem; color:#666; margin-left:0.5rem;">
+              Powered by Spotify
+          </span>
+      </div>
+      <p>
+        Also check out <a href="https://trivio.me">Trivio</a>, a trivia game
+        with friends using your Spotify stats!
+      </p>
       <a href="https://www.buymeacoffee.com/lucasobe" target="_blank"
         ><img
           src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png"
@@ -80,8 +93,6 @@
         "user-top-read",
         "user-read-recently-played",
         "user-read-currently-playing",
-        "user-read-private",
-        "user-read-email",
       ].join(" ");
 
       const authEndpoint = "https://accounts.spotify.com/authorize";
@@ -173,6 +184,21 @@
             } catch (err) {
               console.warn(`Could not parse JSON for ${title}`, err);
             }
+          } else if (res.status === 403) {
+            console.warn(`403 on ${title}, forcing re-auth…`);
+            sessionStorage.clear();
+            startAuth();
+            return;
+          } else if (res.status === 401) {
+            console.warn(`401 on ${title}, forcing re-auth…`);
+            sessionStorage.clear();
+            startAuth();
+            return;
+          } else if (res.status === 429) {
+            alert(
+              `Rate limit exceeded. Please try again later. Status: ${res.status}`,
+            );
+            return;
           } else {
             alert(`Error ${res.status} fetching ${title}`, await res.text());
           }
@@ -199,9 +225,7 @@
           "https://api.spotify.com/v1/me",
           (data) => [
             `Display Name: ${data.display_name}`,
-            `Email: ${data.email}`,
-            `Country: ${data.country}`,
-            `Product: ${data.product}`,
+            `Followers: ${data.followers.total}`,
           ],
         );
 
